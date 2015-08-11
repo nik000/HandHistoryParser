@@ -77,6 +77,9 @@ class TxtAnalyzer(Analyzer):
         elif(self.pokerNetwork == PokerNetwork.IPOKER):
             pfActionRegex = r"(.*): (Fold|Call|Bet|Check|Raise|Allin)( \(NF\))?( Allin )?( .([0-9\.]*))?"   
             cardRegex = r"\*\*\* (FLOP|TURN|RIVER) \*\*\* \[(.{2,3})( (.{2,3}) (.{2,3}))?\]"
+        elif(self.pokerNetwork == PokerNetwork.HEM2):
+            pfActionRegex = r"(.*) (folds|calls|checks|raises|bets)( \[([0-9\.]*)\])?"
+            cardRegex = r"\*\* Dealing (Flop|Turn|River) \*\* \[ (..)(, (..), (..))? \]"
           
         
         for line in lines:
@@ -130,7 +133,7 @@ class TxtAnalyzer(Analyzer):
     def _analyzePreflop(self, pfLines):
         
         blindRegex = r"(.*) posts (small|big) blind"
-        
+        getBlindsFromPreflop = False
         
         if(self.pokerNetwork == PokerNetwork.PARTY):
             pfActionRegex = r"(.*) (folds|calls|checks|raises|is all-In)( \[.([0-9\.]*) .+\])?"
@@ -146,6 +149,11 @@ class TxtAnalyzer(Analyzer):
             blindRegex = r"(.*): Post (SB|BB) .*"
             dealtToRegex = r"Dealt to (.*) \[(..) (..)\]"
             pfActionRegex = r"(.*): (Fold|Call|Check|Raise|Allin)( \(NF\))?( Allin)?( .([0-9\.]*))?"
+        elif(self.pokerNetwork == PokerNetwork.HEM2):
+            blindRegex = r"(.*) posts (small|big) blind \[([0-9\.]*)\]"
+            dealtToRegex = r"Dealt to (.*) \[  (..) (..) \]"
+            pfActionRegex = r"(.*) (folds|calls|checks|raises)( \[([0-9\.]*)\])?"
+            getBlindsFromPreflop = True
         
 
         for line in pfLines:
@@ -155,9 +163,13 @@ class TxtAnalyzer(Analyzer):
                 player = self._correctPlayerName(player)
                 if(searchObj.group(2) == "small" or searchObj.group(2) == "SB"):
                     self.pfActions.append((player,"S"))
+                    if getBlindsFromPreflop == True:
+                        self.sb = searchObj.group(3)
                 else:
                     self.pfActions.append((player,"B"))
-                
+                    if getBlindsFromPreflop == True:
+                        self.bb = searchObj.group(3)
+                    
             searchObj = re.search(dealtToRegex, line)
             if(searchObj):
                 self.hero = searchObj.group(1)
@@ -186,6 +198,8 @@ class TxtAnalyzer(Analyzer):
             seatRegex = r"Seat [0-9]+: (.*) \(.([0-9\.]*) in chips\)"
         elif(self.pokerNetwork == PokerNetwork.IPOKER):
             seatRegex = r"Seat [0-9]+: (.*) \(.([0-9\.]*) in chips\)( DEALER)?"
+        elif(self.pokerNetwork == PokerNetwork.HEM2):
+            seatRegex = r"Seat [0-9]+: (.*) \( ([0-9\.]*) \) (.*)"
         
         for line in lines:
             searchObj = re.search(seatRegex, line)
@@ -204,6 +218,7 @@ class TxtAnalyzer(Analyzer):
         sbPos = 1
         bbPos = 2
         gameTypePos = 3
+        getBlindsFromPreflop = False
         
         if(self.pokerNetwork == PokerNetwork.PARTY):
             gameIdRegex = r"Game ([0-9]*) \*\*\*\*\*"
@@ -225,7 +240,14 @@ class TxtAnalyzer(Analyzer):
             sbPos = 2
             bbPos = 3
             gameTypePos = 1
-        
+        elif(self.pokerNetwork == PokerNetwork.HEM2):
+            gameIdRegex = r"Game ([0-9]*) \*\*\*\*\*"
+            blindRegex = r"Hand (.*) Texas (.*) - (.*)"
+            sbPos = 2
+            bbPos = 3
+            gameTypePos = 1
+            getBlindsFromPreflop = True
+
         searchObj = re.search(gameIdRegex, lines[gameIdLine])
         if(searchObj):
             self.handId = searchObj.group(1)
@@ -234,8 +256,9 @@ class TxtAnalyzer(Analyzer):
             
         searchObj = re.search(blindRegex, lines[blindIdLine])
         if(searchObj):
-            self.sb = searchObj.group(sbPos)
-            self.bb = searchObj.group(bbPos)
+            if getBlindsFromPreflop == False:
+                self.sb = searchObj.group(sbPos)
+                self.bb = searchObj.group(bbPos)
             if(searchObj.group(gameTypePos) in ("No Limit", "NL")):
                 self.gameType = "NL"
             elif(searchObj.group(gameTypePos) in ("Pot Limit", "PL")):
@@ -256,6 +279,9 @@ class TxtAnalyzer(Analyzer):
         
         if(headerLine.find('888poker') != -1):
             self.pokerNetwork = PokerNetwork.POKER888
+        elif(headerLine.find('***** Hand History for Game 1111111111 *****') != -1):
+            self.pokerNetwork = PokerNetwork.HEM2
+        # Following pattern seems bad and should be changed as it conflicts with generic HH format from HEM2 above
         elif(headerLine.find('***** Hand History') != -1):
             self.pokerNetwork = PokerNetwork.PARTY
         elif(headerLine.find('PokerStars') != -1):
@@ -304,8 +330,11 @@ class TxtAnalyzer(Analyzer):
             postflopLineSep = "*** SUMMARY ***"
             seatLineSep = " posts "
             nrHeaderLines = 2
-            
-                   
+        elif(self.pokerNetwork == PokerNetwork.HEM2):
+            preflopLineSep = "** Dealing Flop **"
+            postflopLineSep = " shows "
+            seatLineSep = " posts "
+            nrHeaderLines = 3
 
         #read header lines
         for i in range(nrHeaderLines):
@@ -344,7 +373,8 @@ class PokerNetwork():
     POKER888 = 2
     PARTY = 3
     IPOKER = 4
-    UNKNOWN = 5
+    HEM2 = 5
+    UNKNOWN = 6
 
                 
 
